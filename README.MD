@@ -1,14 +1,14 @@
 ## 📖 Temporal Spring Boot Learning Index
 
-| Day    | Click to View Section |
-|--------|------------------------|
-| 🔹 Day 1 | [Spring Boot Integration + Hello Workflow](#day-1-integrate-temporal-java-sdk-with-spring-boot---helloworkflow-and-rest-trigger) |
-| 🔹 Day 2 | [Retry Logic, Timers, Exception Handling](#-day-2--temporal-retry-logic-timers-and-exception-handling-spring-boot) |
-| 🔜 Day 3 | Signals and Queries |
-| 🔜 Day 4 | Child Workflows |
-| 🔜 Day 5 | Workflow Versioning & Patching |
-| 🔜 Day 6 | Dynamic Workflow Composition (JSON API) |
-| 🔜 Day 7 | Finalizing PaaS Layer for TempleRun |
+| Day    | Click to View Section                                                                                                            |
+|--------|----------------------------------------------------------------------------------------------------------------------------------|
+| 🔹 Day 1 | [Spring Boot Integration + Hello Workflow](#-day-1-integrate-temporal-java-sdk-with-spring-boot---helloworkflow-and-rest-trigger) |
+| 🔹 Day 2 | [Retry Logic, Timers, Exception Handling](#-day-2-temporal-retry-logic-timers-and-exception-handling-spring-boot)                |
+| 🔜 Day 3 | Signals and Queries                                                                                                              |
+| 🔜 Day 4 | Child Workflows                                                                                                                  |
+| 🔜 Day 5 | Workflow Versioning & Patching                                                                                                   |
+| 🔜 Day 6 | Dynamic Workflow Composition (JSON API)                                                                                          |
+| 🔜 Day 7 | Finalizing PaaS Layer for TempleRun                                                                                              |
 
 
 # 📘 Day 1: Integrate Temporal Java SDK with Spring Boot - HelloWorkflow and REST Trigger
@@ -223,7 +223,7 @@ http://localhost:8080/api/greet?name=Ishu
 | Temporal UI      | Observability of workflow execution |
 
 
-# 📘 Day 2 – Temporal Retry Logic, Timers, and Exception Handling (Spring Boot)
+# 📘 Day 2: Temporal Retry Logic, Timers, and Exception Handling (Spring Boot)
 
 ---
 
