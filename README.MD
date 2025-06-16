@@ -208,3 +208,120 @@ http://localhost:8080/api/greet?name=Ishu
 | `WorkflowClient` | Starts the workflow via Java API |
 | `Worker`         | Listens to the task queue and runs workflow/activity |
 | Temporal UI      | Observability of workflow execution |
+
+
+# 📘 Day 2 – Temporal Retry Logic, Timers, and Exception Handling (Spring Boot)
+
+---
+
+### ✅ Objectives
+- Configure retry policies on activities
+- Add delay/timer support using `Workflow.sleep`
+- Handle activity failures gracefully
+- Observe retry behavior in Temporal Web UI
+
+---
+
+### ⚙️ Changes Made
+
+---
+
+### 🔁 Updated `HelloActivityImpl` (random failure to test retries)
+
+```java
+public class HelloActivityImpl implements HelloActivity {
+    @Override
+    public String sayHello(String name) {
+        System.out.println("👋 Trying to greet: " + name);
+
+        if (Math.random() < 0.7) {
+            System.out.println("💥 Simulated failure");
+            throw new RuntimeException("Simulated failure in HelloActivity");
+        }
+
+        return "Hello from activity, " + name;
+    }
+}
+```
+
+---
+
+### 🔄 Updated `HelloWorkflowImpl` to add:
+
+- Retry options
+- Timer (Workflow.sleep)
+- Exception handling
+
+```java
+public class HelloWorkflowImpl implements HelloWorkflow {
+    private final HelloActivity activity;
+
+    public HelloWorkflowImpl() {
+        ActivityOptions options = ActivityOptions.newBuilder()
+                .setStartToCloseTimeout(Duration.ofSeconds(3))
+                .setRetryOptions(RetryOptions.newBuilder()
+                        .setInitialInterval(Duration.ofSeconds(1))
+                        .setBackoffCoefficient(2.0)
+                        .setMaximumAttempts(3)
+                        .build())
+                .build();
+
+        this.activity = Workflow.newActivityStub(HelloActivity.class, options);
+    }
+
+    @Override
+    public void run(String name) {
+        try {
+            // Simulate delay
+            Workflow.sleep(Duration.ofSeconds(2));
+
+            String result = activity.sayHello(name);
+            System.out.println("✅ Workflow Result: " + result);
+        } catch (Exception ex) {
+            System.out.println("❌ Activity failed after retries: " + ex.getMessage());
+            throw Workflow.wrap(ex); // required to propagate error correctly in Temporal
+        }
+    }
+}
+```
+
+---
+
+### 🌐 REST API – No Changes Needed
+
+You can still test using:
+
+```
+http://localhost:8080/api/greet?name=Ishu
+```
+
+---
+
+### 📊 Verify in Temporal UI
+
+Visit: [http://localhost:8233](http://localhost:8233)
+
+- Click into a workflow run
+- Look at `Attempts` under Activity Execution
+- See retry delays, backoff, and final failure (if max attempts exceeded)
+
+---
+
+### 🧠 Key Concepts Recap
+
+| Feature          | Description |
+|------------------|-------------|
+| RetryOptions     | Auto-retries with backoff for failed activities |
+| Workflow.sleep   | Non-blocking delay inside workflows |
+| Workflow.wrap()  | Needed to rethrow Java exceptions from within workflow code |
+| Max Attempts     | Stops retrying after limit; marks workflow as failed |
+
+---
+
+### ✅ Summary
+
+- Implemented **retry policy** on activity calls
+- Used `Workflow.sleep()` to simulate delays/timers
+- Observed retries and failures in the Temporal UI
+
+---
