@@ -1,4 +1,4 @@
-## 📖 Temporal Spring Boot Learning Index
+## 📖 Temporal Spring Boot Vibe Coding Using ChatGpt 😂
 
 | Day    | Click to View Section                                                                                                            |
 |--------|----------------------------------------------------------------------------------------------------------------------------------|
