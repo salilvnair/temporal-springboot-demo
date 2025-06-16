@@ -10,13 +10,15 @@ public class HelloWorkflowImpl implements HelloWorkflow {
     private final HelloActivity activity;
 
     public HelloWorkflowImpl() {
+        RetryOptions retryOptions = RetryOptions.newBuilder()
+                                .setInitialInterval(Duration.ofSeconds(1))
+                                .setBackoffCoefficient(2.0)
+                                .setMaximumAttempts(3)
+                                .setDoNotRetry(IllegalArgumentException.class.getName())
+                                .build();
         ActivityOptions options = ActivityOptions.newBuilder()
                 .setStartToCloseTimeout(Duration.ofSeconds(3))
-                .setRetryOptions(RetryOptions.newBuilder()
-                        .setInitialInterval(Duration.ofSeconds(1))
-                        .setBackoffCoefficient(2.0)
-                        .setMaximumAttempts(3)
-                        .build())
+                .setRetryOptions(retryOptions)
                 .build();
 
         this.activity = Workflow.newActivityStub(HelloActivity.class, options);
