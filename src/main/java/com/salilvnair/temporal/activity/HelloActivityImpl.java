@@ -14,8 +14,6 @@ public class HelloActivityImpl implements HelloActivity {
             System.out.println("🙅‍♂️ Don't Retry this");
             throw new IllegalArgumentException("NonRetryableExceptions failure in HelloActivity");
         }
-
-
         return "Hello from activity, " + name;
     }
 }

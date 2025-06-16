@@ -246,12 +246,16 @@ public class HelloActivityImpl implements HelloActivity {
     @Override
     public String sayHello(String name) {
         System.out.println("👋 Trying to greet: " + name);
-
-        if (Math.random() < 0.7) {
-            System.out.println("💥 Simulated failure");
+        int random = (int)(Math.random() * 3) + 1;
+        System.out.println("🧮 Radom:"+random);
+        if (random == 2) {
+            System.out.println("☹️ Simulated failure");
             throw new RuntimeException("Simulated failure in HelloActivity");
         }
-
+        if (random == 3) {
+            System.out.println("🙅‍♂️ Don't Retry this");
+            throw new IllegalArgumentException("NonRetryableExceptions failure in HelloActivity");
+        }
         return "Hello from activity, " + name;
     }
 }
@@ -270,13 +274,15 @@ public class HelloWorkflowImpl implements HelloWorkflow {
     private final HelloActivity activity;
 
     public HelloWorkflowImpl() {
+        RetryOptions retryOptions = RetryOptions.newBuilder()
+                .setInitialInterval(Duration.ofSeconds(1))
+                .setBackoffCoefficient(2.0)
+                .setMaximumAttempts(3)
+                .setDoNotRetry(IllegalArgumentException.class.getName())
+                .build();
         ActivityOptions options = ActivityOptions.newBuilder()
                 .setStartToCloseTimeout(Duration.ofSeconds(3))
-                .setRetryOptions(RetryOptions.newBuilder()
-                        .setInitialInterval(Duration.ofSeconds(1))
-                        .setBackoffCoefficient(2.0)
-                        .setMaximumAttempts(3)
-                        .build())
+                .setRetryOptions(retryOptions)
                 .build();
 
         this.activity = Workflow.newActivityStub(HelloActivity.class, options);
