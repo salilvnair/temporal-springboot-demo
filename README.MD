@@ -1,14 +1,14 @@
 ## 📖 Temporal Spring Boot Vibe Coding Using ChatGpt 😂
 
-| Day    | Click to View Section                                                                                                            |
-|--------|----------------------------------------------------------------------------------------------------------------------------------|
+| Day    | Click to View Section                                                                                                             |
+|--------|-----------------------------------------------------------------------------------------------------------------------------------|
 | 🔹 Day 1 | [Spring Boot Integration + Hello Workflow](#-day-1-integrate-temporal-java-sdk-with-spring-boot---helloworkflow-and-rest-trigger) |
-| 🔹 Day 2 | [Retry Logic, Timers, Exception Handling](#-day-2-temporal-retry-logic-timers-and-exception-handling-spring-boot)                |
-| 🔜 Day 3 | Signals and Queries                                                                                                              |
-| 🔜 Day 4 | Child Workflows                                                                                                                  |
-| 🔜 Day 5 | Workflow Versioning & Patching                                                                                                   |
-| 🔜 Day 6 | Dynamic Workflow Composition (JSON API)                                                                                          |
-| 🔜 Day 7 | Finalizing PaaS Layer for TempleRun                                                                                              |
+| 🔹 Day 2 | [Retry Logic, Timers, Exception Handling](#-day-2-temporal-retry-logic-timers-and-exception-handling-spring-boot)                 |
+| 🔹 Day 3 | [Signals, Flags, and Child Workflows](#-day-3-signals-flags-and-child-workflows)                                                  |                                                                                                             |
+| 🔜 Day 4 | Workflow Versioning & Patching                                                                                                    |
+| 🔜 Day 5 | Queries, Interceptors, and Heartbeats                                                                                             |
+| 🔜 Day 6 | Dynamic Workflow Composition (JSON API)                                                                                           |
+| 🔜 Day 7 | Finalizing PaaS Layer for TempleRun                                                                                               |
 
 
 # 📘 Day 1: Integrate Temporal Java SDK with Spring Boot - HelloWorkflow and REST Trigger
@@ -342,5 +342,382 @@ Visit: [http://localhost:8233](http://localhost:8233)
 - Implemented **retry policy** on activity calls
 - Used `Workflow.sleep()` to simulate delays/timers
 - Observed retries and failures in the Temporal UI
+
+---
+
+
+📘 Day 3: Signals, Flags, and Child Workflows
+
+This project demonstrates a **multi-phase Temporal workflow system** in Java using Spring Boot. It models a new internet service connection process, progressing through three major workflows:
+
+- `IntakeWorkflow`: Starts the process, sets flags based on service availability, and waits for manager approval.
+- `InstallationWorkflow`: Triggered upon approval; initiates OpsTeam activities.
+- `OpsTeamWorkflow`: Executes concrete steps like reaching location, installing the service, and notifying the user.
+
+---
+
+## 🚀 How It Works
+
+### Step 1: IntakeWorkflow
+
+- Triggered via `/api/intake/start`.
+- Calls three APIs to check:
+    - ZIP availability
+    - Bandwidth check
+    - Address verification
+- Sets internal flags: `SERVICE_AVAILABLE`, `ADDRESS_VALID`
+- Waits for manager approval via signal
+- Upon approval, starts `InstallationWorkflow` as a child workflow
+
+### Step 2: InstallationWorkflow
+
+- Triggered by `approveInstallation` signal from Intake
+- Starts `OpsTeamWorkflow` as a child
+- Passes entire `IntakeRequest` object forward
+
+### Step 3: OpsTeamWorkflow
+
+- Installs service in 3 steps:
+    - `reachUserLocation`
+    - `installedService`
+    - `notifyUser` via email
+- Each step is an activity
+
+---
+
+## 📦 Code Structure
+
+## IntakeRequest.java
+
+```java
+@Getter
+@Setter
+public class IntakeRequest {
+    private String requestId;
+    private String zip;
+    private String address;
+    private String mbps;
+    private String userEmailId;
+}
+```
+
+
+## TaskQueue.java
+
+```java
+public class TaskQueue {
+    public static class Name {
+        public static final String INTAKE_TASK_QUEUE = "intake-task-queue";
+        public static final String INSTALLATION_TASK_QUEUE = "installation-task-queue";
+        public static final String OPS_TASK_QUEUE = "ops-task-queue";
+    }
+}
+```
+
+### 1. `IntakeWorkflow.java`
+
+````java
+@WorkflowInterface
+public interface IntakeWorkflow {
+    @WorkflowMethod
+    void start(IntakeRequest intakeRequest);
+
+    @SignalMethod
+    void approveInstallation(IntakeRequest intakeRequest); // manager approval
+}
+````
+
+### 2. `IntakeWorkflowImpl.java`
+````java
+public class IntakeWorkflowImpl implements IntakeWorkflow {
+    private boolean approved = false;
+
+    private final SiteCheckActivity siteCheck = Workflow.newActivityStub(
+            SiteCheckActivity.class,
+            ActivityOptions.newBuilder()
+                    .setStartToCloseTimeout(Duration.ofSeconds(10))
+                    .build()
+    );
+
+    @Override
+    public void start(IntakeRequest intakeRequest) {
+        System.out.println("📥 Intake received for: "+intakeRequest.getRequestId());
+        boolean serviceAvailable = siteCheck.checkZipService(intakeRequest.getZip());
+        boolean addressValid = siteCheck.validateAddress(intakeRequest.getAddress());
+        boolean bandwidthOk = siteCheck.checkBandwidth(intakeRequest.getZip(), intakeRequest.getMbps());
+
+        if (!serviceAvailable || !addressValid || !bandwidthOk) {
+            System.out.println("❌ Pre-checks failed");
+            return;
+        }
+
+        System.out.println("✅ All checks passed. 📋 Waiting for manager approval...");
+
+        // Wait for approval signal
+        Workflow.await(() -> approved);
+
+        System.out.println("✅ Manager approved. Triggering InstallationWorkflow...");
+
+        // Trigger child workflow
+        InstallationWorkflow child = Workflow.newChildWorkflowStub(InstallationWorkflow.class);
+        child.startInstallation(intakeRequest);
+    }
+
+    @Override
+    public void approveInstallation(IntakeRequest intakeRequest) {
+        System.out.println("📩 Received manager approval signal!:"+intakeRequest.getRequestId());
+        this.approved = true;
+    }
+}
+````
+
+### 2a. `SiteCheckActivity.java`
+
+````java
+@ActivityInterface
+public interface SiteCheckActivity {
+    @ActivityMethod
+    boolean checkZipService(String zipCode);
+    @ActivityMethod
+    boolean validateAddress(String address);
+    @ActivityMethod
+    boolean checkBandwidth(String zipCode, int requestedMbps);
+}
+````
+
+### 2b. `SiteCheckActivityImpl.java`
+
+````java
+public class SiteCheckActivityImpl implements SiteCheckActivity {
+    @Override
+    public boolean checkZipService(String zipCode) {
+        System.out.println("✅ Checking service availability for ZIP: " + zipCode);
+        return zipCode.startsWith("7"); // Simulate
+    }
+
+    @Override
+    public boolean validateAddress(String address) {
+        System.out.println("📍 Validating address: " + address);
+        return address != null && address.length() > 5;
+    }
+
+    @Override
+    public boolean checkBandwidth(String zipCode, int requestedMbps) {
+        System.out.println("🔌 Checking bandwidth availability for " + requestedMbps + " Mbps");
+        return requestedMbps <= 500;
+    }
+}
+````
+
+---
+
+### 3. `InstallationWorkflow.java`
+
+````java
+@WorkflowInterface
+public interface InstallationWorkflow {
+    @WorkflowMethod
+    void startInstallation(IntakeRequest intakeRequest);
+}
+````
+
+### 4. `InstallationWorkflowImpl.java`
+
+````java
+public class InstallationWorkflowImpl implements InstallationWorkflow {
+    @Override
+    public void startInstallation(IntakeRequest intakeRequest) {
+        String zipCode = intakeRequest.getZip();
+        String address = intakeRequest.getAddress();
+        System.out.println("🚀 [InstallationWorkflow] Starting for ZIP: " + zipCode + ", Address: " + address);
+
+        ChildWorkflowOptions childOptions = ChildWorkflowOptions.newBuilder()
+                .setTaskQueue(TaskQueue.Name.OPS_TASK_QUEUE)
+                .setWorkflowRunTimeout(Duration.ofMinutes(10))
+                .build();
+
+        OpsTeamWorkflow ops = Workflow.newChildWorkflowStub(OpsTeamWorkflow.class, childOptions);
+
+        // Simulate steps
+        ops.installService(intakeRequest);
+
+        System.out.println("✅ [InstallationWorkflow] Installation steps completed.");
+    }
+}
+````
+
+---
+
+### 5. `OpsTeamWorkflow.java`
+
+````java
+@WorkflowInterface
+public interface OpsTeamWorkflow {
+    @WorkflowMethod
+    void installService(IntakeRequest intakeRequest);
+}
+````
+
+### 6. `OpsTeamWorkflowImpl.java`
+
+````java
+public class OpsTeamWorkflowImpl implements OpsTeamWorkflow {
+    @Override
+    public void installService(IntakeRequest intakeRequest) {
+        String zip = intakeRequest.getZip();
+        String address = intakeRequest.getAddress();
+        String email = intakeRequest.getUserEmailId();
+        System.out.println("🔧 [OpsTeam] Installing service at ZIP: " + zip + ", Address: " + address);
+        Workflow.sleep(Duration.ofSeconds(5));
+        OpsTeamActivity opsTeamActivity = Workflow.newActivityStub(
+                OpsTeamActivity.class,
+                ActivityOptions.newBuilder()
+                        .setStartToCloseTimeout(Duration.ofMinutes(1))
+                        .setTaskQueue(TaskQueue.Name.OPS_TASK_QUEUE)
+                        .build()
+        );
+        System.out.println("👨‍🔧 Starting OpsTeam Activities at user location...");
+
+        opsTeamActivity.reachUserLocation(zip, address);
+        opsTeamActivity.installedService(zip, address);
+        opsTeamActivity.notifyUser(email);
+    }
+}
+````
+
+---
+
+### 7. `OpsTeamActivity.java`
+
+````java
+@ActivityInterface
+public interface OpsTeamActivity {
+    @ActivityMethod
+    void reachUserLocation(String zip, String address);
+    @ActivityMethod
+    void installedService(String zip, String address);
+    @ActivityMethod
+    void notifyUser(String email);
+}
+````
+
+---
+
+### 8. `OpsTeamActivityImpl.java`
+
+````java
+public class OpsTeamActivityImpl implements OpsTeamActivity {
+    @Override
+    public void reachUserLocation(String zip, String address) {
+        System.out.println("🚗 [OpsTeam] Reaching user location at ZIP: " + zip + ", Address: " + address);
+        // Simulate delay
+        try {
+            Thread.sleep(1000); // In real workflows, use Workflow.sleep() if inside a workflow
+        } 
+        catch (InterruptedException ignore) {}
+    }
+
+    @Override
+    public void installedService(String zip, String address) {
+        System.out.println("🚗 [OpsTeam] Installed Service at user location ZIP: " + zip + ", Address: " + address);
+        // Simulate delay
+        try {
+            Thread.sleep(1000);
+        } 
+        catch (InterruptedException ignore) {}
+    }
+
+    @Override
+    public void notifyUser(String email) {
+        System.out.println("📧 [OpsTeam] Sending installation complete email to: " + email);
+        try {
+            Thread.sleep(500);
+        } 
+        catch (InterruptedException ignore) {}
+    }
+}
+````
+
+---
+
+### 9. `IntakeController.java`
+
+````java
+@RestController
+@RequestMapping("/api/intake")
+public class IntakeController {
+    private final WorkflowClient workflowClient;
+
+    public IntakeController(WorkflowClient workflowClient) {
+        this.workflowClient = workflowClient;
+    }
+
+    @PostMapping("/start")
+    public String startIntake(@RequestBody IntakeRequest intakeRequest) {
+        IntakeWorkflow workflow = workflowClient.newWorkflowStub(
+                IntakeWorkflow.class,
+                WorkflowOptions.newBuilder()
+                        .setWorkflowId("intake-" + intakeRequest.getRequestId())
+                        .setTaskQueue(TaskQueue.Name.INTAKE_TASK_QUEUE)
+                        .build()
+        );
+        WorkflowClient.start(workflow::start, intakeRequest);
+        return "Started IntakeWorkflow for: " + intakeRequest.getRequestId();
+    }
+
+    @PostMapping("/approve")
+    public String approveIntake(@RequestBody IntakeRequest intakeRequest) {
+        IntakeWorkflow intakeWorkflow = workflowClient.newWorkflowStub(IntakeWorkflow.class, "intake-" + intakeRequest.getRequestId());
+        intakeWorkflow.approveInstallation(intakeRequest);
+        return "Manager approved intake for: " + intakeRequest.getRequestId();
+    }
+}
+````
+
+---
+
+## 🚀 How to Test
+
+1. Start the Temporal server and Spring Boot app
+2. `POST /api/intake/start` with body:
+
+````json
+{
+  "requestId": "req-1001",
+  "zip": "75001",
+  "address": "123 Main Street",
+  "mbps": "100",
+  "userEmailId": "ishu@example.com"
+}
+````
+
+3. Simulate approval:  `POST /api/intake/approve`
+````json
+{
+  "requestId": "req-1001",
+  "zip": "75001",
+  "address": "123 Main Street",
+  "mbps": "100",
+  "userEmailId": "ishu@example.com"
+}
+````
+
+4. ✅ Final Output (Logs):
+```
+📥 Intake received for: req-1001
+✅ Checking service availability for ZIP: 75001
+📍 Validating address: 123 Main Street
+🔌 Checking bandwidth availability for 100 Mbps
+✅ All checks passed. 📋 Waiting for manager approval...
+📩 Received manager approval signal!:req-1001
+✅ Manager approved. Triggering InstallationWorkflow...
+🚀 [InstallationWorkflow] Starting for ZIP: 75001, Address: 123 Main Street
+🔧 [OpsTeam] Installing service at ZIP: 75001, Address: 123 Main Street
+👨‍🔧 Starting OpsTeam Activities at user location...
+🚗 [OpsTeam] Reaching user location at ZIP: 75001, Address: 123 Main Street
+🚗 [OpsTeam] Installed Service at user location ZIP: 75001, Address: 123 Main Street
+📧 [OpsTeam] Sending installation complete email to: ishu@example.com
+✅ [InstallationWorkflow] Installation steps completed.
+```
 
 ---

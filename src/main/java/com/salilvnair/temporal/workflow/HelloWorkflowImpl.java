@@ -8,6 +8,7 @@ import java.time.Duration;
 
 public class HelloWorkflowImpl implements HelloWorkflow {
     private final HelloActivity activity;
+    private String greeting = "Default"; // 👈 state to query
 
     public HelloWorkflowImpl() {
         RetryOptions retryOptions = RetryOptions.newBuilder()
@@ -27,14 +28,25 @@ public class HelloWorkflowImpl implements HelloWorkflow {
     @Override
     public void run(String name) {
         try {
-            // Simulate Timer before activity call
-            Workflow.sleep(Duration.ofSeconds(2));
+            greeting = activity.sayHello(name);
+            System.out.println("✅ Initial Greeting: " + greeting);
 
-            String result = activity.sayHello(name);
-            System.out.println("✅ Workflow Result: " + result);
+            // Keep workflow alive to accept signals
+            Workflow.await(() -> false); // Keeps the workflow running forever (until terminated externally)
         } catch (Exception ex) {
             System.out.println("❌ Activity failed after retries: " + ex.getMessage());
             throw Workflow.wrap(ex); // required to propagate error correctly in Temporal
         }
+    }
+
+    @Override
+    public void updateGreeting(String newMessage) {
+        System.out.println("🔔 Received signal: " + newMessage);
+        greeting = newMessage;
+    }
+
+    @Override
+    public String getGreeting() {
+        return greeting;
     }
 }

@@ -1,18 +1,15 @@
 package com.salilvnair.temporal.workflow;
 
-import io.temporal.workflow.QueryMethod;
+import com.salilvnair.temporal.model.IntakeRequest;
 import io.temporal.workflow.SignalMethod;
 import io.temporal.workflow.WorkflowInterface;
 import io.temporal.workflow.WorkflowMethod;
 
 @WorkflowInterface
-public interface HelloWorkflow {
+public interface IntakeWorkflow {
     @WorkflowMethod
-    void run(String name);
+    void start(IntakeRequest intakeRequest);
 
     @SignalMethod
-    void updateGreeting(String newMessage); // 🔔 Signal
-
-    @QueryMethod
-    String getGreeting(); // 🔍 Query
+    void approveInstallation(IntakeRequest intakeRequest); // manager approval
 }
