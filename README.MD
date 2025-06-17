@@ -346,7 +346,7 @@ Visit: [http://localhost:8233](http://localhost:8233)
 ---
 
 
-📘 Day 3: Signals, Flags, and Child Workflows
+# 📘 Day 3: Signals, Flags, and Child Workflows
 
 This project demonstrates a **multi-phase Temporal workflow system** in Java using Spring Boot. It models a new internet service connection process, progressing through three major workflows:
 
