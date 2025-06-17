@@ -25,6 +25,11 @@ public class OpsTeamWorkflowImpl implements OpsTeamWorkflow {
         System.out.println("👨‍🔧 Starting OpsTeam Activities at user location...");
 
         opsTeamActivity.reachUserLocation(zip, address);
+//        opsTeamActivity.verifyCableConnection(zip, address);
+        int version = Workflow.getVersion("verifyCableConnection", Workflow.DEFAULT_VERSION, 1);
+        if (version == 1) {
+            opsTeamActivity.verifyCableConnection(zip, address);
+        }
         opsTeamActivity.installedService(zip, address);
         opsTeamActivity.notifyUser(email);
     }

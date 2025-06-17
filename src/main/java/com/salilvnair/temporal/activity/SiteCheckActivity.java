@@ -10,5 +10,7 @@ public interface SiteCheckActivity {
     @ActivityMethod
     boolean validateAddress(String address);
     @ActivityMethod
+    boolean validateAddress1(String address);
+    @ActivityMethod
     boolean checkBandwidth(String zipCode, int requestedMbps);
 }

@@ -9,6 +9,10 @@ public interface OpsTeamActivity {
     void reachUserLocation(String zip, String address);
     @ActivityMethod
     void installedService(String zip, String address);
+
+    @ActivityMethod
+    void verifyCableConnection(String zip, String address);
+
     @ActivityMethod
     void notifyUser(String email);
 }

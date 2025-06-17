@@ -8,7 +8,8 @@ public class OpsTeamActivityImpl implements OpsTeamActivity {
         // Simulate delay
         try {
             Thread.sleep(1000); // In real workflows, use Workflow.sleep() if inside a workflow
-        } catch (InterruptedException e) {
+        }
+        catch (InterruptedException e) {
             e.printStackTrace();
         }
     }
@@ -19,7 +20,19 @@ public class OpsTeamActivityImpl implements OpsTeamActivity {
         // Simulate delay
         try {
             Thread.sleep(1000); // In real workflows, use Workflow.sleep() if inside a workflow
-        } catch (InterruptedException e) {
+        }
+        catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
+
+    @Override
+    public void verifyCableConnection(String zip, String address) {
+        System.out.println("🧪 [OpsTeam] Verifying cable connection at ZIP: " + zip + ", Address: " + address);
+        try {
+            Thread.sleep(1000);
+        }
+        catch (InterruptedException e) {
             e.printStackTrace();
         }
     }
@@ -29,7 +42,8 @@ public class OpsTeamActivityImpl implements OpsTeamActivity {
         System.out.println("📧 [OpsTeam] Sending installation complete email to: " + email);
         try {
             Thread.sleep(500);
-        } catch (InterruptedException e) {
+        }
+        catch (InterruptedException e) {
             e.printStackTrace();
         }
     }

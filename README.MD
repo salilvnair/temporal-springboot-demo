@@ -5,7 +5,7 @@
 | 🔹 Day 1 | [Spring Boot Integration + Hello Workflow](#-day-1-integrate-temporal-java-sdk-with-spring-boot---helloworkflow-and-rest-trigger) |
 | 🔹 Day 2 | [Retry Logic, Timers, Exception Handling](#-day-2-temporal-retry-logic-timers-and-exception-handling-spring-boot)                 |
 | 🔹 Day 3 | [Signals, Flags, and Child Workflows](#-day-3-signals-flags-and-child-workflows)                                                  |                                                                                                             |
-| 🔜 Day 4 | Workflow Versioning & Patching                                                                                                    |
+| 🔹 Day 4 | [Workflow Versioning & Patching in Temporal (Spring Boot)](#-day-4-workflow-versioning--patching-in-temporal-spring-boot) |
 | 🔜 Day 5 | Queries, Interceptors, and Heartbeats                                                                                             |
 | 🔜 Day 6 | Dynamic Workflow Composition (JSON API)                                                                                           |
 | 🔜 Day 7 | Finalizing PaaS Layer for TempleRun                                                                                               |
@@ -719,5 +719,158 @@ public class IntakeController {
 📧 [OpsTeam] Sending installation complete email to: ishu@example.com
 ✅ [InstallationWorkflow] Installation steps completed.
 ```
+
+### 🧠 Key Concepts Recap
+
+#### ✅ 1. Signals
+
+| Concept         | Description                                                                 |
+|----------------|-----------------------------------------------------------------------------|
+| What are they? | Signals are Temporal’s way to send data to a **running workflow**.          |
+| Why use them?  | They let workflows **pause and wait for external input**, like REST calls.  |
+| Where used?    | To notify `IntakeWorkflow` when **manager approval** was received.          |
+| Example        | `@SignalMethod void approveInstallation(IntakeRequest intakeRequest);`      |
+
+---
+
+#### ✅ 2. Flags (Decision Determinants)
+
+| Concept         | Description                                                                 |
+|----------------|------------------------------------------------------------------------------|
+| What are they? | In-memory boolean variables inside the workflow to **guide logic flow**.     |
+| Why use them?  | To track **if pre-checks passed**, and whether to proceed.                   |
+| Where used?    | Inside `IntakeWorkflow` for `SERVICE_AVAILABLE`, `ADDRESS_VALID`, etc.       |
+| Example        | `if (serviceAvailable && addressValid) { continueWorkflow(); }`              |
+
+---
+
+#### ✅ 3. Child Workflows
+
+| Concept         | Description                                                                 |
+|----------------|-----------------------------------------------------------------------------|
+| What are they? | A workflow calling **another workflow**, fully managed by Temporal.         |
+| Why use them?  | Modularity, independent retry/failure handling, traceability.               |
+| Where used?    | From `InstallationWorkflow` → called `OpsTeamWorkflow` as child             |
+| Example        | `OpsTeamWorkflow ops = Workflow.newChildWorkflowStub(...);`                 |
+
+---
+
+#### ✅ 4. Activities and Timeouts
+
+| Concept         | Description                                                                 |
+|----------------|-----------------------------------------------------------------------------|
+| What are they? | Real-world steps executed as **Activities** in Temporal                     |
+| Examples        | `reachUserLocation()`, `notifyUser()`, etc.                                |
+| Timeout Used    | `StartToCloseTimeout` for each activity to prevent stuck tasks             |
+| Why Important?  | Helps Temporal manage retries and detect long-running/stuck operations     |
+
+---
+
+### 🧠 Summary
+
+- ✅ Used **Signals** to pause/resume workflow on external approval
+- ✅ Introduced **Flags** to track decision paths inside workflow logic
+- ✅ Triggered **Child Workflows** (OpsTeam) from Installation phase
+- ✅ Encapsulated real-world steps inside **Activities** with timeouts
+- ✅ Improved traceability and modularity of the workflow system
+
+---
+
+# 📘 Day 4: Workflow Versioning & Patching in Temporal (Spring Boot)
+
+In this lesson, we learn how to **safely evolve Temporal workflows** over time without breaking running or replaying workflows. This is crucial in long-running workflows, where **modifying activity structure without versioning will lead to runtime errors** like `NonDeterministicException`.
+
+---
+
+## 🧠 Key Concepts
+
+- `Workflow.getVersion(changeId, minVersion, maxVersion)` is used to **gate** new logic during workflow execution.
+- Without versioning, **adding, removing or reordering activities** causes workflow replay to fail.
+- Temporal needs to **reproduce the exact sequence** of commands for a workflow run, so even code comments or refactors (if not guarded) can break determinism.
+- `Workflow.isReplaying()` is deprecated; always prefer `getVersion`.
+
+---
+
+## 🔧 Scenario: Adding New Activities Mid-Workflow
+
+We enhanced the `IntakeWorkflow` and `InstallationWorkflow` by adding new logic:
+- `validateAddress1()` — an extra address check.
+- `verifyCableConnection()` — a cable validation step during Ops installation.
+
+---
+
+## 💥 Problem Without Versioning
+
+If you directly add the new activity like:
+
+```java
+// ❌ BREAKS Replay
+boolean addressValid1 = siteCheck.validateAddress1(intakeRequest.getAddress());
+```
+
+You’ll get:
+
+```
+NonDeterministicException: Command COMMAND_TYPE_SCHEDULE_ACTIVITY_TASK doesn't match event EVENT_TYPE_ACTIVITY_TASK_SCHEDULED
+```
+
+Why? Because the event history from previous runs **doesn’t expect** a new activity to be scheduled at that point.
+
+---
+
+## ✅ Safe Fix With Versioning
+
+### In `IntakeWorkflowImpl.java`:
+
+```java
+int version = Workflow.getVersion("validateAddress1", Workflow.DEFAULT_VERSION, 1);
+boolean addressValid1 = true;
+if (version == 1) {
+    addressValid1 = siteCheck.validateAddress1(intakeRequest.getAddress());
+}
+```
+
+### In `OpsTeamWorkflowImpl.java`:
+
+```java
+int version = Workflow.getVersion("verifyCableConnection", Workflow.DEFAULT_VERSION, 1);
+if (version == 1) {
+    opsTeamActivity.verifyCableConnection(zip, address);
+}
+```
+
+---
+
+## 🔁 How Versioning Works
+
+- The first time workflow runs, `getVersion(...)` writes the version into workflow history.
+- On replay, Temporal reads this history value and feeds it back.
+- Thus the same path (either legacy or new) is followed, ensuring determinism.
+
+---
+
+## 🧪 How to Test Breakage (and Fix)
+
+### Test Breakage
+
+1. Start a workflow by hitting the `/start` API.
+2. Before calling `/approve`, **add a new activity** in your workflow **without versioning**.
+3. Now call `/approve` — Temporal will **crash on replay** with `NonDeterministicException`.
+
+### Fix
+
+- Wrap new logic inside `Workflow.getVersion(...)`.
+- Redeploy and re-run — now old and new workflows coexist safely.
+
+---
+
+## ✅ Summary
+
+| Feature                 | Covered |
+|-------------------------|---------|
+| Add activity mid-flow   | ✅      |
+| Prevent breaking changes| ✅      |
+| Use of `getVersion()`   | ✅      |
+| End-to-end test         | ✅      |
 
 ---

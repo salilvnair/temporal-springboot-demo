@@ -12,6 +12,11 @@ public class SiteCheckActivityImpl implements SiteCheckActivity {
         System.out.println("📍 Validating address: " + address);
         return address != null && address.length() > 5;
     }
+    @Override
+    public boolean validateAddress1(String address) {
+        System.out.println("📍 Validating1 address: " + address);
+        return address != null && address.length() > 5;
+    }
 
     @Override
     public boolean checkBandwidth(String zipCode, int requestedMbps) {
