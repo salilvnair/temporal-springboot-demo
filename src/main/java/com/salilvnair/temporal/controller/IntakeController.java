@@ -38,4 +38,12 @@ public class IntakeController {
         intakeWorkflow.approveInstallation(intakeRequest);
         return "Manager approved intake for: " + intakeRequest.getRequestId();
     }
+
+    @PostMapping("/status")
+    public String workflowStatus(@RequestBody IntakeRequest intakeRequest) {
+        IntakeWorkflow intakeWorkflow = workflowClient.newWorkflowStub(
+                IntakeWorkflow.class, "intake-" + intakeRequest.getRequestId()
+        );
+        return intakeWorkflow.findCurrentStatus();
+    }
 }

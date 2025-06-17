@@ -9,6 +9,7 @@ import java.time.Duration;
 
 public class IntakeWorkflowImpl implements IntakeWorkflow {
     private boolean approved = false;
+    private String status = "Not started";
 
     private final SiteCheckActivity siteCheck = Workflow.newActivityStub(
             SiteCheckActivity.class,
@@ -19,6 +20,7 @@ public class IntakeWorkflowImpl implements IntakeWorkflow {
 
     @Override
     public void start(IntakeRequest intakeRequest) {
+        status = "🏃‍♂️Running pre-checks...";
         System.out.println("📥 Intake received for: "+intakeRequest.getRequestId());
         boolean serviceAvailable = siteCheck.checkZipService(intakeRequest.getZip());
         boolean addressValid = siteCheck.validateAddress(intakeRequest.getAddress());
@@ -44,6 +46,7 @@ public class IntakeWorkflowImpl implements IntakeWorkflow {
         if (version == 1) {
             addressValid1 = siteCheck.validateAddress1(intakeRequest.getAddress());
             if (!addressValid1) {
+                status = "Pre-checks failed ❌";
                 System.out.println("❌ Address validation 1 failed");
                 return;
             }
@@ -51,7 +54,8 @@ public class IntakeWorkflowImpl implements IntakeWorkflow {
 
         boolean bandwidthOk = siteCheck.checkBandwidth(intakeRequest.getZip(), intakeRequest.getMbps());
 
-        if (!serviceAvailable || !addressValid || !addressValid1 || !bandwidthOk) {
+        if (!serviceAvailable || !addressValid || !bandwidthOk) {
+            status = "Pre-checks failed ❌";
             System.out.println("❌ Pre-checks failed");
             return;
         }
@@ -59,18 +63,26 @@ public class IntakeWorkflowImpl implements IntakeWorkflow {
         System.out.println("✅ All checks passed. 📋 Waiting for manager approval...");
 
         // Wait for approval signal
+        status = "Waiting for manager approval...👮‍♂️⏱️";
         Workflow.await(() -> approved);
-
+        status = "👮‍♂️✅ Manager approved. Triggering InstallationWorkflow...";
         System.out.println("✅ Manager approved. Triggering InstallationWorkflow...");
 
         // Trigger child workflow
         InstallationWorkflow child = Workflow.newChildWorkflowStub(InstallationWorkflow.class);
         child.startInstallation(intakeRequest);
+        status = "Installation complete 🚀";
     }
 
     @Override
     public void approveInstallation(IntakeRequest intakeRequest) {
-        System.out.println("📩 Received manager approval signal!:"+intakeRequest.getRequestId());
+        System.out.println("📩 Received manager approval email:"+intakeRequest.getRequestId());
+        status = "📩 Received manager approval email";
         this.approved = true;
+    }
+
+    @Override
+    public String findCurrentStatus() {
+        return status;
     }
 }
