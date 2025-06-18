@@ -5,8 +5,8 @@
 | 🔹 Day 1 | [Spring Boot Integration + Hello Workflow](#-day-1-integrate-temporal-java-sdk-with-spring-boot---helloworkflow-and-rest-trigger) |
 | 🔹 Day 2 | [Retry Logic, Timers, Exception Handling](#-day-2-temporal-retry-logic-timers-and-exception-handling-spring-boot)                 |
 | 🔹 Day 3 | [Signals, Flags, and Child Workflows](#-day-3-signals-flags-and-child-workflows)                                                  |                                                                                                             |
-| 🔹 Day 4 | [Workflow Versioning & Patching in Temporal (Spring Boot)](#-day-4-workflow-versioning--patching-in-temporal-spring-boot) |
-| 🔜 Day 5 | Queries, Interceptors, and Heartbeats                                                                                             |
+| 🔹 Day 4 | [Workflow Versioning & Patching in Temporal (Spring Boot)](#-day-4-workflow-versioning--patching-in-temporal-spring-boot)         |
+| 🔜 Day 5 | [Queries, Interceptors, and Heartbeats](#-day-5-temporal-queries-interceptors--heartbeats-spring-boot)                            |
 | 🔜 Day 6 | Dynamic Workflow Composition (JSON API)                                                                                           |
 | 🔜 Day 7 | Finalizing PaaS Layer for TempleRun                                                                                               |
 
