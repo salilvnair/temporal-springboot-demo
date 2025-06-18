@@ -874,3 +874,470 @@ if (version == 1) {
 | End-to-end test         | ✅      |
 
 ---
+
+# 🛠️ Day 5: Temporal Queries, Interceptors & Heartbeats (Spring Boot)
+
+Welcome to Day 5 of our Temporal deep dive! Today, we tackled **Queries**, **Interceptors**, and **Heartbeats** to make our workflows more observable and controllable.
+
+---
+
+## ✅ 1. Workflow Queries (Read-Only Introspection)
+
+We implemented `@QueryMethod` in `IntakeWorkflow`:
+
+```java
+@WorkflowInterface
+public interface IntakeWorkflow {
+  @WorkflowMethod
+  void start(IntakeRequest intakeRequest);
+
+  @SignalMethod
+  void approveInstallation(IntakeRequest intakeRequest); // manager approval
+
+  // 🔍 New query method
+  @QueryMethod
+  String findCurrentStatus();
+}
+```
+
+```java
+public class IntakeWorkflowImpl implements IntakeWorkflow {
+  private boolean approved = false;
+  private String status = "Not started";
+
+  private final SiteCheckActivity siteCheck = Workflow.newActivityStub(
+          SiteCheckActivity.class,
+          ActivityOptions.newBuilder()
+                  .setStartToCloseTimeout(Duration.ofSeconds(10))
+                  .build()
+  );
+
+  @Override
+  public void start(IntakeRequest intakeRequest) {
+    status = "🏃‍♂️Running pre-checks...";
+    System.out.println("📥 Intake received for: "+intakeRequest.getRequestId());
+    boolean serviceAvailable = siteCheck.checkZipService(intakeRequest.getZip());
+    boolean addressValid = siteCheck.validateAddress(intakeRequest.getAddress());
+//        boolean addressValid1 = siteCheck.validateAddress1(intakeRequest.getAddress());
+//        ❌ io.temporal.worker.NonDeterministicException:
+//        [TMPRL1100] COMMAND_TYPE_SCHEDULE_ACTIVITY_TASK doesn't match EVENT_TYPE_ACTIVITY_TASK_SCHEDULED...
+//        🚨 Why You're Getting This Error
+//
+//        Temporal records every step of the workflow into its event history — including activity method names, parameters, and order.
+//
+//        You changed the order or added a new activity:
+//
+////    previously:
+//        validateAddress();      // Event ID 16
+//        checkBandwidth();       // Event ID 17
+//
+////    now (you added in between):
+//        validateAddress();      // Event ID 16
+//        validateAddress1();     // NEW — not recorded before
+//        checkBandwidth();       // Now this becomes Event ID 18
+    boolean addressValid1 = true;
+    int version = Workflow.getVersion("validateAddress1", Workflow.DEFAULT_VERSION, 1);
+    if (version == 1) {
+      addressValid1 = siteCheck.validateAddress1(intakeRequest.getAddress());
+      if (!addressValid1) {
+        status = "Pre-checks failed ❌";
+        System.out.println("❌ Address validation 1 failed");
+        return;
+      }
+    }
+
+    boolean bandwidthOk = siteCheck.checkBandwidth(intakeRequest.getZip(), intakeRequest.getMbps());
+
+    if (!serviceAvailable || !addressValid || !bandwidthOk) {
+      status = "Pre-checks failed ❌";
+      System.out.println("❌ Pre-checks failed");
+      return;
+    }
+
+    System.out.println("✅ All checks passed. 📋 Waiting for manager approval...");
+
+    // Wait for approval signal
+    status = "Waiting for manager approval...👮‍♂️⏱️";
+    Workflow.await(() -> approved);
+    status = "👮‍♂️✅ Manager approved. Triggering InstallationWorkflow...";
+    System.out.println("✅ Manager approved. Triggering InstallationWorkflow...");
+
+    // Trigger child workflow
+    InstallationWorkflow child = Workflow.newChildWorkflowStub(InstallationWorkflow.class);
+    child.startInstallation(intakeRequest);
+    status = "Installation complete 🚀";
+  }
+
+  @Override
+  public void approveInstallation(IntakeRequest intakeRequest) {
+    System.out.println("📩 Received manager approval email:"+intakeRequest.getRequestId());
+    status = "📩 Received manager approval email";
+    this.approved = true;
+  }
+
+  @Override
+  public String findCurrentStatus() {
+    return status;
+  }
+}
+
+```
+
+📌 This lets us query the live status of a running workflow via REST or internal logic.
+
+---
+
+## ✅ 2. Interceptors
+
+Interceptors in Temporal allow injecting custom logic into SDK lifecycle points.
+
+We implemented and registered:
+
+### ▶️ `LoggingActivityInterceptor`
+
+```java
+public class LoggingActivityInterceptor extends ActivityInboundCallsInterceptorBase {
+  private ActivityExecutionContext context;
+
+  public LoggingActivityInterceptor(ActivityInboundCallsInterceptor next) {
+    super(next);
+  }
+
+  @Override
+  public void init(ActivityExecutionContext context) {
+    super.init(context);
+    this.context = context;
+    System.out.println("🔧 [LoggingActivityInterceptor:init] Initialized for activity: " + context.getInfo().getActivityType());
+  }
+
+  @Override
+  public ActivityOutput execute(ActivityInput input) {
+    String activityType = context.getInfo().getActivityType();
+    System.out.println("🚀 [LoggingActivityInterceptor:execute] Starting activity: " + activityType);
+
+    ActivityOutput output = super.execute(input);
+
+    System.out.println("✅ [LoggingActivityInterceptor:execute] Finished activity: " + activityType);
+    return output;
+  }
+}
+```
+
+### ▶️ `LoggingWorkflowInboundInterceptor`
+
+```java
+public class LoggingWorkflowInboundInterceptor extends WorkflowInboundCallsInterceptorBase {
+
+  private WorkflowInfo workflowInfo;
+
+  public LoggingWorkflowInboundInterceptor(WorkflowInboundCallsInterceptor next) {
+    super(next);
+  }
+
+  @Override
+  public void init(WorkflowOutboundCallsInterceptor outboundCalls) {
+    this.workflowInfo = Workflow.getInfo(); // Capture info about the current workflow
+    System.out.println("📥 [LoggingWorkflowInboundInterceptor:init] Initialized for Workflow ID: " + workflowInfo.getWorkflowId());
+    super.init(outboundCalls);
+  }
+
+  @Override
+  public WorkflowOutput execute(WorkflowInput input) {
+    System.out.println("🚀 [LoggingWorkflowInboundInterceptor:execute] Starting workflow: " + workflowInfo.getWorkflowType());
+    WorkflowOutput output = super.execute(input);
+    System.out.println("✅ [LoggingWorkflowInboundInterceptor:execute] Completed workflow: " + workflowInfo.getWorkflowType());
+    return output;
+  }
+
+  @Override
+  public void handleSignal(SignalInput input) {
+    System.out.println("📨 [LoggingWorkflowInboundInterceptor:signal] Received signal: " + input.getSignalName());
+    super.handleSignal(input);
+  }
+
+  @Override
+  public QueryOutput handleQuery(QueryInput input) {
+    System.out.println("🔍 [LoggingWorkflowInboundInterceptor:query] Received query: " + input.getQueryName());
+    return super.handleQuery(input);
+  }
+}
+```
+
+### ▶️ Registration via WorkerInterceptor
+
+```java
+public class LoggingWorkerInterceptor implements WorkerInterceptor {
+
+  @Override
+  public WorkflowInboundCallsInterceptor interceptWorkflow(WorkflowInboundCallsInterceptor next) {
+    return new LoggingWorkflowInboundInterceptor(next);
+  }
+
+  @Override
+  public ActivityInboundCallsInterceptor interceptActivity(ActivityInboundCallsInterceptor next) {
+    return new LoggingActivityInterceptor(next);
+  }
+
+  @Override
+  public NexusOperationInboundCallsInterceptor interceptNexusOperation(OperationContext context, NexusOperationInboundCallsInterceptor next) {
+    return next;
+  }
+}
+```
+
+### ✅ Registered via `WorkerFactoryOptions`:
+
+```java
+@Bean
+public WorkerFactory workerFactory(WorkflowClient client) {
+  WorkerFactoryOptions factoryOptions = WorkerFactoryOptions.newBuilder()
+          .setWorkerInterceptors(new LoggingWorkerInterceptor())
+          .build();
+
+  return WorkerFactory.newInstance(client, factoryOptions);
+}
+```
+
+### ▶️ Registration via WorkflowClientInterceptor
+
+```java
+public class LoggingClientInterceptor implements WorkflowClientInterceptor {
+    @Override
+    public WorkflowStub newUntypedWorkflowStub(String workflowType, WorkflowOptions options, WorkflowStub next) {
+        return next;
+    }
+
+    @Override
+    public WorkflowStub newUntypedWorkflowStub(WorkflowExecution execution, Optional<String> workflowType, WorkflowStub next) {
+        return next;
+    }
+
+    @Override
+    public ActivityCompletionClient newActivityCompletionClient(ActivityCompletionClient next) {
+        return next;
+    }
+
+    @Override
+    public WorkflowClientCallsInterceptor workflowClientCallsInterceptor(WorkflowClientCallsInterceptor next) {
+        return new LoggingWorkflowClientInterceptor(next);
+    }
+}
+```
+
+### ✅ Registered via `WorkflowClientOptions`:
+
+```java
+@Bean
+public WorkflowClient workflowClient(WorkflowServiceStubs service) {
+    return WorkflowClient.newInstance(
+            service,
+            WorkflowClientOptions.newBuilder()
+                    .setNamespace("default")
+                    .setInterceptors(new LoggingClientInterceptor())
+                    .build()
+    );
+}
+```
+---
+
+### ✅ 3. Heartbeats + Activity Cancellation
+
+#### ▶️ Heartbeat Activities
+
+```java
+@Override
+public void installedService(String zip, String address) {
+  ActivityExecutionContext context = Activity.getExecutionContext();
+  System.out.println("🚗 [OpsTeam] Installed Service at user location ZIP: " + zip + ", Address: " + address);
+  // Simulate delay
+  try {
+    for (int i = 1; i <= 5; i++) {
+      context.heartbeat("Progress: " + (i * 20) + "%");
+      Thread.sleep(1000);
+    }
+    Thread.sleep(1000); // In real workflows, use Workflow.sleep() if inside a workflow
+  }
+  catch (CanceledFailure e) {
+    System.out.println("❌ Activity cancelled: " + e.getMessage());
+    throw e;
+  }
+  catch (InterruptedException e) {
+    Thread.currentThread().interrupt();
+    throw new RuntimeException(e);
+  }
+}
+```
+
+This helps detect long-running activity health.
+
+#### ▶️ Signal-Based Workflow Cancellation
+
+```java
+@WorkflowInterface
+public interface OpsTeamWorkflow {
+  @WorkflowMethod
+  void installService(IntakeRequest intakeRequest);
+
+  @SignalMethod
+  void cancelWork();
+}
+```
+
+```java
+public class OpsTeamWorkflowImpl implements OpsTeamWorkflow {
+  private boolean cancelled = false;
+
+  @Override
+  public void installService(IntakeRequest intakeRequest) {
+    System.out.println("🔧 [OpsTeam] Starting installation");
+    if (cancelled) {
+      System.out.println("❌ [OpsTeam] Cancelled before starting");
+      return;
+    }
+    String zip = intakeRequest.getZip();
+    String address = intakeRequest.getAddress();
+    String email = intakeRequest.getUserEmailId();
+    System.out.println("🔧 [OpsTeam] Installing service at ZIP: " + zip + ", Address: " + address);
+    OpsTeamActivity opsTeamActivity = Workflow.newActivityStub(
+            OpsTeamActivity.class,
+            ActivityOptions.newBuilder()
+                    .setStartToCloseTimeout(Duration.ofMinutes(1))
+                    .setHeartbeatTimeout(Duration.ofSeconds(5)) // heartbeat every 5 sec expected
+                    .setTaskQueue(TaskQueue.Name.OPS_TASK_QUEUE)
+                    .build()
+    );
+    System.out.println("👨‍🔧 Starting OpsTeam Activities at user location...");
+    opsTeamActivity.reachUserLocation(zip, address);
+    Workflow.sleep(Duration.ofSeconds(10));
+    if (cancelled) {
+      System.out.println("❌ [OpsTeam] Cancelled after reaching location");
+      return;
+    }
+//        opsTeamActivity.verifyCableConnection(zip, address);
+    int version = Workflow.getVersion("verifyCableConnection", Workflow.DEFAULT_VERSION, 1);
+    if (version == 1) {
+      opsTeamActivity.verifyCableConnection(zip, address);
+    }
+
+    opsTeamActivity.installedService(zip, address);
+    if (cancelled) {
+      System.out.println("❌ [OpsTeam] Cancelled after service install");
+      return;
+    }
+    opsTeamActivity.notifyUser(email);
+  }
+
+  @Override
+  public void cancelWork() {
+    cancelled = true;
+    System.out.println("🚨 [OpsTeam] Received cancel signal");
+  }
+}
+```
+In the `InstallationWorkflowImpl` added `workflowId`
+```java
+public class InstallationWorkflowImpl implements InstallationWorkflow {
+    @Override
+    public void startInstallation(IntakeRequest intakeRequest) {
+        String zipCode = intakeRequest.getZip();
+        String address = intakeRequest.getAddress();
+        System.out.println("🚀 [InstallationWorkflow] Starting for ZIP: " + zipCode + ", Address: " + address);
+
+        ChildWorkflowOptions childOptions = ChildWorkflowOptions.newBuilder()
+                                            .setTaskQueue(TaskQueue.Name.OPS_TASK_QUEUE)
+                                            .setWorkflowId("ops-" + intakeRequest.getRequestId())
+                                            .setWorkflowRunTimeout(Duration.ofMinutes(10))
+                                            .build();
+
+        OpsTeamWorkflow ops = Workflow.newChildWorkflowStub(OpsTeamWorkflow.class, childOptions);
+
+        // Simulate steps
+        ops.installService(intakeRequest);
+
+        System.out.println("✅ [InstallationWorkflow] Installation steps completed.");
+    }
+}
+```
+
+
+And `cancel-ops` in `IntakeController.java`
+
+```java
+@PostMapping("/cancel-ops")
+public String cancelOpsTeamWorkflow(@RequestBody IntakeRequest intakeRequest) {
+    OpsTeamWorkflow workflow = workflowClient.newWorkflowStub(
+            OpsTeamWorkflow.class,"ops-" + intakeRequest.getRequestId()
+    );
+
+    workflow.cancelWork();  // Signal call
+    return "🚨 Cancel signal sent to OpsTeamWorkflow";
+}
+```
+
+### ✅ Output (Logs):
+```
+🚀 [LoggingWorkflowClientInterceptor] Starting workflow: intake-12sws27-1001
+📥 [LoggingWorkflowInboundInterceptor:init] Initialized for Workflow ID: intake-12sws27-1001
+🚀 [LoggingWorkflowInboundInterceptor:execute] Starting workflow: IntakeWorkflow
+📥 Intake received for: 12sws27-1001
+🔧 [LoggingActivityInterceptor:init] Initialized for activity: CheckZipService
+🚀 [LoggingActivityInterceptor:execute] Starting activity: CheckZipService
+✅ Checking service availability for ZIP: 75001
+✅ [LoggingActivityInterceptor:execute] Finished activity: CheckZipService
+🔧 [LoggingActivityInterceptor:init] Initialized for activity: ValidateAddress
+🚀 [LoggingActivityInterceptor:execute] Starting activity: ValidateAddress
+📍 Validating address: 123 Main Street
+✅ [LoggingActivityInterceptor:execute] Finished activity: ValidateAddress
+🔧 [LoggingActivityInterceptor:init] Initialized for activity: ValidateAddress1
+🚀 [LoggingActivityInterceptor:execute] Starting activity: ValidateAddress1
+📍 Validating1 address: 123 Main Street
+✅ [LoggingActivityInterceptor:execute] Finished activity: ValidateAddress1
+🔧 [LoggingActivityInterceptor:init] Initialized for activity: CheckBandwidth
+🚀 [LoggingActivityInterceptor:execute] Starting activity: CheckBandwidth
+🔌 Checking bandwidth availability for 100 Mbps
+✅ [LoggingActivityInterceptor:execute] Finished activity: CheckBandwidth
+✅ All checks passed. 📋 Waiting for manager approval...
+📩 [LoggingWorkflowClientInterceptor] Sending signal to: intake-12sws27-1001
+📨 [LoggingWorkflowInboundInterceptor:signal] Received signal: approveInstallation
+📩 Received manager approval email:12sws27-1001
+✅ Manager approved. Triggering InstallationWorkflow...
+📥 [LoggingWorkflowInboundInterceptor:init] Initialized for Workflow ID: 2fd94638-4a37-3d4b-b5b4-e1cdee7c701f
+🚀 [LoggingWorkflowInboundInterceptor:execute] Starting workflow: InstallationWorkflow
+🚀 [InstallationWorkflow] Starting for ZIP: 75001, Address: 123 Main Street
+📥 [LoggingWorkflowInboundInterceptor:init] Initialized for Workflow ID: ops-12sws27-1001
+🚀 [LoggingWorkflowInboundInterceptor:execute] Starting workflow: OpsTeamWorkflow
+🔧 [OpsTeam] Starting installation
+🔧 [OpsTeam] Installing service at ZIP: 75001, Address: 123 Main Street
+👨‍🔧 Starting OpsTeam Activities at user location...
+🔧 [LoggingActivityInterceptor:init] Initialized for activity: ReachUserLocation
+🚀 [LoggingActivityInterceptor:execute] Starting activity: ReachUserLocation
+🚗 [OpsTeam] Reaching user location at ZIP: 75001, Address: 123 Main Street
+✅ [LoggingActivityInterceptor:execute] Finished activity: ReachUserLocation
+📩 [LoggingWorkflowClientInterceptor] Sending signal to: ops-12sws27-1001
+📨 [LoggingWorkflowInboundInterceptor:signal] Received signal: cancelWork
+🚨 [OpsTeam] Received cancel signal
+❌ [OpsTeam] Cancelled after reaching location
+✅ [LoggingWorkflowInboundInterceptor:execute] Completed workflow: OpsTeamWorkflow
+✅ [InstallationWorkflow] Installation steps completed.
+✅ [LoggingWorkflowInboundInterceptor:execute] Completed workflow: InstallationWorkflow
+✅ [LoggingWorkflowInboundInterceptor:execute] Completed workflow: IntakeWorkflow
+```
+
+---
+
+## 🐞 Common Errors We Solved
+
+| Error | Cause | Fix |
+|------|-------|------|
+| `ALREADY_EXISTS` | Workflow with same ID already running | Use `workflowStub.signalWithStart(...)` or handle gracefully |
+| `NullPointerException at WorkflowStub.start()` | Untyped stub was null | Ensure you create typed stub with correct WorkflowOptions |
+
+---
+
+## ✅ What You Learned Today
+
+- 🔍 How to introspect workflows with queries
+- 🧠 How to inject custom logic using Interceptors
+- ❤️ How to monitor and cancel activities using Heartbeats and Signals
+
+---

@@ -7,7 +7,6 @@ import io.temporal.client.WorkflowOptions;
 import io.temporal.client.WorkflowStub;
 import io.temporal.common.interceptors.WorkflowClientCallsInterceptor;
 import io.temporal.common.interceptors.WorkflowClientInterceptor;
-
 import java.util.Optional;
 
 public class LoggingClientInterceptor implements WorkflowClientInterceptor {

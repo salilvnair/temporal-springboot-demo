@@ -15,6 +15,7 @@ public class InstallationWorkflowImpl implements InstallationWorkflow {
 
         ChildWorkflowOptions childOptions = ChildWorkflowOptions.newBuilder()
                                             .setTaskQueue(TaskQueue.Name.OPS_TASK_QUEUE)
+                                            .setWorkflowId("ops-" + intakeRequest.getRequestId())
                                             .setWorkflowRunTimeout(Duration.ofMinutes(10))
                                             .build();
 

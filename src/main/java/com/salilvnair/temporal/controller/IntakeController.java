@@ -3,6 +3,7 @@ package com.salilvnair.temporal.controller;
 import com.salilvnair.temporal.model.IntakeRequest;
 import com.salilvnair.temporal.type.TaskQueue;
 import com.salilvnair.temporal.workflow.IntakeWorkflow;
+import com.salilvnair.temporal.workflow.OpsTeamWorkflow;
 import io.temporal.client.WorkflowClient;
 import io.temporal.client.WorkflowOptions;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -46,4 +47,15 @@ public class IntakeController {
         );
         return intakeWorkflow.findCurrentStatus();
     }
+
+    @PostMapping("/cancel-ops")
+    public String cancelOpsTeamWorkflow(@RequestBody IntakeRequest intakeRequest) {
+        OpsTeamWorkflow workflow = workflowClient.newWorkflowStub(
+                OpsTeamWorkflow.class,"ops-" + intakeRequest.getRequestId()
+        );
+
+        workflow.cancelWork();  // Signal call
+        return "🚨 Cancel signal sent to OpsTeamWorkflow";
+    }
+
 }
