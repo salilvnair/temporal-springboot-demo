@@ -875,7 +875,7 @@ if (version == 1) {
 
 ---
 
-# 🛠️ Day 5: Temporal Queries, Interceptors & Heartbeats (Spring Boot)
+# 🫀 Day 5: Temporal Queries, Interceptors & Heartbeats (Spring Boot)
 
 Welcome to Day 5 of our Temporal deep dive! Today, we tackled **Queries**, **Interceptors**, and **Heartbeats** to make our workflows more observable and controllable.
 
