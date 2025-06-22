@@ -1,3 +1,13 @@
+## 📖 Temporal Spring Boot Vibe Coding Using ChatGpt 😂
+
+| Day      | Click to View Section                                                                                                             |
+|----------|-----------------------------------------------------------------------------------------------------------------------------------|
+| ✅ Day 1  | [ Spring Boot Integration + Hello Workflow](#-day-1-integrate-temporal-java-sdk-with-spring-boot---helloworkflow-and-rest-trigger) |
+| 🔜 Day 2  | Retry Logic, Timers, Exception Handling                                                                                           |
+| 🔜 Day 3  | Signals, Flags, and Child Workflows                                                   |                                                                                                             |
+| 🔜 Day 4  | Workflow Versioning & Patching in Temporal (Spring Boot)           |
+| 🔜 Day 5  | Temporal Queries, Interceptors & Heartbeats (Spring Boot)          | 
+
 # 📘 Day 1: Integrate Temporal Java SDK with Spring Boot - HelloWorkflow and REST Trigger
 
 ### ✅ Objective
