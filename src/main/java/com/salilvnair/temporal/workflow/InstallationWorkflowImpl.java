@@ -4,6 +4,7 @@ import com.salilvnair.temporal.model.IntakeRequest;
 import com.salilvnair.temporal.type.TaskQueue;
 import io.temporal.workflow.ChildWorkflowOptions;
 import io.temporal.workflow.Workflow;
+
 import java.time.Duration;
 
 public class InstallationWorkflowImpl implements InstallationWorkflow {
@@ -12,10 +13,9 @@ public class InstallationWorkflowImpl implements InstallationWorkflow {
         String zipCode = intakeRequest.getZip();
         String address = intakeRequest.getAddress();
         System.out.println("🚀 [InstallationWorkflow] Starting for ZIP: " + zipCode + ", Address: " + address);
-
         ChildWorkflowOptions childOptions = ChildWorkflowOptions.newBuilder()
+                                            .setWorkflowId("ops-" + Workflow.getInfo().getWorkflowId())
                                             .setTaskQueue(TaskQueue.Name.OPS_TASK_QUEUE)
-                                            .setWorkflowId("ops-" + intakeRequest.getRequestId())
                                             .setWorkflowRunTimeout(Duration.ofMinutes(10))
                                             .build();
 

@@ -1,6 +1,6 @@
 package com.salilvnair.temporal.activity;
 
-public class SiteCheckActivityImpl implements SiteCheckActivity {
+public class IntakeActivityImpl implements IntakeActivity {
     @Override
     public boolean checkZipService(String zipCode) {
         System.out.println("✅ Checking service availability for ZIP: " + zipCode);
@@ -13,7 +13,7 @@ public class SiteCheckActivityImpl implements SiteCheckActivity {
         return address != null && address.length() > 5;
     }
     @Override
-    public boolean validateAddress1(String address) {
+    public boolean validateMetroAddress(String address) {
         System.out.println("📍 Validating1 address: " + address);
         return address != null && address.length() > 5;
     }
