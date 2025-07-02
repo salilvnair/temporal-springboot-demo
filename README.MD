@@ -7,7 +7,7 @@
 | ✅ Day 3   | [Signals, Flags, and Child Workflows](#-day-3-signals-flags-and-child-workflows)                                                             |
 | ✅ Day 4   | [Workflow Versioning & Patching in Temporal (Spring Boot)](#-day-4-workflow-versioning--patching-in-temporal-spring-boot)                    |
 | ✅ Day 5   | [Temporal Queries, Interceptors & Heartbeats (Spring Boot)](#-day-5-temporal-queries-interceptors--heartbeats-spring-boot)                   |
-| ✅ Day 6   | [Multi-Phase Telecom Workflow – Provisioning, Billing, and Support Setup](#-day-6-multi-phase-telecom-workflow--provisioning-billing-support-setup) |
+| ✅ Day 6   | [Multi-Phase Telecom Workflow – Provisioning, Billing, and Support Setup](#-day-6-multi-phase-telecom-workflow--provisioning-billing-and-support-setup) |
 | 🔜 Day 7   | [Continue-As-New, SignalWithStart & Long-Running Workflows](#-day-7-continue-as-new-signalwithstart--long-running-workflows)                 |
 | 🔜 Day 8   | [Workflow Updates, Search Attributes & Visibility APIs](#-day-8-workflow-updates-search-attributes--visibility-apis)                         |
 | 🔜 Day 9   | [Retry Policies & Workflow-level Retry Config](#-day-9-retry-policies--workflow-level-retry-config)                                          |
