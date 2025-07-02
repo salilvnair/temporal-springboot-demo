@@ -1,12 +1,22 @@
 ## 📖 Temporal Spring Boot Vibe Coding Using ChatGpt 😂
 
-| Day      | Click to View Section                                                                                                              |
-|----------|------------------------------------------------------------------------------------------------------------------------------------|
-| ✅ Day 1  | [ Spring Boot Integration + Hello Workflow](#-day-1-integrate-temporal-java-sdk-with-spring-boot---helloworkflow-and-rest-trigger) |
-| ✅ Day 2  | [ Retry Logic, Timers, Exception Handling](#-day-2-temporal-retry-logic-timers-and-exception-handling-spring-boot)                 |
-| ✅ Day 3  | [ Signals, Flags, and Child Workflows](#-day-3-signals-flags-and-child-workflows)                                                  |                                                                                                             |
-| ✅ Day 4  | [ Workflow Versioning & Patching in Temporal (Spring Boot)](#-day-4-workflow-versioning--patching-in-temporal-spring-boot)         |
-| ✅ Day 5  | [ Temporal Queries, Interceptors & Heartbeats (Spring Boot)](#-day-5-temporal-queries-interceptors--heartbeats-spring-boot)        | 
+| Day       | Click to View Section                                                                                                                       |
+|-----------|----------------------------------------------------------------------------------------------------------------------------------------------|
+| ✅ Day 1   | [Spring Boot Integration + Hello Workflow](#-day-1-integrate-temporal-java-sdk-with-spring-boot---helloworkflow-and-rest-trigger)           |
+| ✅ Day 2   | [Retry Logic, Timers, Exception Handling](#-day-2-temporal-retry-logic-timers-and-exception-handling-spring-boot)                            |
+| ✅ Day 3   | [Signals, Flags, and Child Workflows](#-day-3-signals-flags-and-child-workflows)                                                             |
+| ✅ Day 4   | [Workflow Versioning & Patching in Temporal (Spring Boot)](#-day-4-workflow-versioning--patching-in-temporal-spring-boot)                    |
+| ✅ Day 5   | [Temporal Queries, Interceptors & Heartbeats (Spring Boot)](#-day-5-temporal-queries-interceptors--heartbeats-spring-boot)                   |
+| ✅ Day 6   | [Multi-Phase Telecom Workflow – Provisioning, Billing, and Support Setup](#-day-6-multi-phase-telecom-workflow--provisioning-billing-support-setup) |
+| 🔜 Day 7   | [Continue-As-New, SignalWithStart & Long-Running Workflows](#-day-7-continue-as-new-signalwithstart--long-running-workflows)                 |
+| 🔜 Day 8   | [Workflow Updates, Search Attributes & Visibility APIs](#-day-8-workflow-updates-search-attributes--visibility-apis)                         |
+| 🔜 Day 9   | [Retry Policies & Workflow-level Retry Config](#-day-9-retry-policies--workflow-level-retry-config)                                          |
+| 🔜 Day 10  | [Testing, Sticky Queues, and Build ID Versioning](#-day-10-testing-sticky-queues-and-build-id-versioning)                                     |
+| 🔜 Day 11  | [Pause/Resume Workflows via Signals + Interceptors](#-day-11-pauseresume-workflows-via-signals--interceptors)                                |
+| 🔜 Day 12  | [Workflow Shadowing & Replay Testing](#-day-12-workflow-shadowing--replay-testing)                                                           |
+| 🔜 Day 13  | [Dynamic Workflow Dispatch with JSON-Driven APIs](#-day-13-dynamic-workflow-dispatch-with-json-driven-apis)                                  |
+| 🔜 Day 14  | [Workflow Deployment Best Practices in Production](#-day-14-workflow-deployment-best-practices-in-production)                                |
+
 
 
 # 📘 Day 1: Integrate Temporal Java SDK with Spring Boot - HelloWorkflow and REST Trigger
@@ -1339,3 +1349,237 @@ public String cancelOpsTeamWorkflow(@RequestBody IntakeRequest intakeRequest) {
 - ❤️ How to monitor and cancel activities using Heartbeats and Signals
 
 ---
+
+# 📘 Day 6: Multi-Phase Telecom Workflow – Provisioning, Billing, and Support Setup
+
+✅ This builds upon your existing telecom flow:  
+- `IntakeWorkflow` handles pre-checks and approval.
+- `InstallationWorkflow` installs services via `OpsTeamWorkflow`.
+- Now we extend the flow with **3 new child workflows**:
+
+---
+
+## 🧩 Updated Execution Flow
+
+```
+IntakeWorkflow
+   ├─ InstallationWorkflow
+   │    └─ OpsTeamWorkflow
+   │        ├─ reachUserLocation()
+   │        ├─ installService()
+   │        └─ notifyUser()
+   ├─ ProvisioningWorkflow
+   │    ├─ provisionInternet()
+   │    └─ provisionVoIP()
+   ├─ BillingWorkflow
+   │    ├─ setupBilling()
+   │    └─ sendInvoice()
+   └─ SupportSetupWorkflow
+        ├─ registerSupportProfile()
+        └─ sendWelcomeKit()
+```
+
+---
+
+## 📦 Updated IntakeWorkflowImpl.java
+
+```java
+public class IntakeWorkflowImpl implements IntakeWorkflow {
+    private boolean approved = false;
+    private String status = "Not started";
+
+    private final IntakeActivity intakeActivity = Workflow.newActivityStub(
+        IntakeActivity.class,
+        ActivityOptions.newBuilder().setStartToCloseTimeout(Duration.ofSeconds(10)).build()
+    );
+
+    @Override
+    public void start(IntakeRequest intakeRequest) {
+        status = "🏃‍♂️Running pre-checks...";
+        boolean serviceAvailable = intakeActivity.checkZipService(intakeRequest.getZip());
+        boolean addressValid = intakeActivity.validateAddress(intakeRequest.getAddress());
+
+        int version = Workflow.getVersion("validateMetroAddress", Workflow.DEFAULT_VERSION, 1);
+        if (version == 1) {
+            boolean metroAddress = intakeActivity.validateMetroAddress(intakeRequest.getAddress());
+            if (!metroAddress) {
+                status = "❌ Metro validation failed";
+                return;
+            }
+        }
+
+        boolean bandwidthOk = intakeActivity.checkBandwidth(intakeRequest.getZip(), intakeRequest.getMbps());
+
+        if (!serviceAvailable || !addressValid || !bandwidthOk) {
+            status = "❌ Pre-checks failed";
+            return;
+        }
+
+        status = "Waiting for manager approval...👮‍♂️⏱️";
+        Workflow.await(() -> approved);
+
+        // ✅ Trigger installation
+        status = "👮‍♂️ Approved. Triggering InstallationWorkflow...";
+        Workflow.newChildWorkflowStub(InstallationWorkflow.class)
+                .startInstallation(intakeRequest);
+        status = "Installation complete 🚀";
+
+        // ✅ Fan-out new child workflows
+        ChildWorkflowOptions postInstallOptions = ChildWorkflowOptions.newBuilder()
+                .setTaskQueue(TaskQueue.Name.POST_INSTALL_TASK_QUEUE)
+                .setWorkflowRunTimeout(Duration.ofMinutes(10))
+                .build();
+
+        Workflow.newChildWorkflowStub(ProvisioningWorkflow.class, postInstallOptions)
+                .startProvisioning(intakeRequest);
+
+        Workflow.newChildWorkflowStub(BillingWorkflow.class, postInstallOptions)
+                .startBilling(intakeRequest);
+
+        Workflow.newChildWorkflowStub(SupportSetupWorkflow.class, postInstallOptions)
+                .startSupportSetup(intakeRequest);
+
+        status = "✅ Post-install workflows completed 🧩";
+    }
+
+    @Override
+    public void approveInstallation(IntakeRequest intakeRequest) {
+        approved = true;
+        status = "📩 Received manager approval email";
+    }
+
+    @Override
+    public String findCurrentStatus() {
+        return status;
+    }
+}
+```
+
+---
+
+## 🔧 PostInstallActivity.java
+
+```java
+@ActivityInterface
+public interface PostInstallActivity {
+    @ActivityMethod void provisionInternet(IntakeRequest request);
+    @ActivityMethod void provisionVoIP(IntakeRequest request);
+    @ActivityMethod void setupBilling(IntakeRequest request);
+    @ActivityMethod void sendInvoice(IntakeRequest request);
+    @ActivityMethod void registerSupportProfile(IntakeRequest request);
+    @ActivityMethod void sendWelcomeKit(IntakeRequest request);
+
+    static PostInstallActivity newStub() {
+        return Workflow.newActivityStub(PostInstallActivity.class,
+            ActivityOptions.newBuilder()
+                .setTaskQueue(TaskQueue.Name.POST_INSTALL_TASK_QUEUE)
+                .setStartToCloseTimeout(Duration.ofSeconds(10))
+                .build());
+    }
+}
+```
+
+---
+
+## ✅ Sample Workflow Implementation (ProvisioningWorkflow)
+
+```java
+@WorkflowInterface
+public interface ProvisioningWorkflow {
+    @WorkflowMethod
+    void startProvisioning(IntakeRequest intakeRequest);
+}
+```
+
+```java
+public class ProvisioningWorkflowImpl implements ProvisioningWorkflow {
+    private final PostInstallActivity activity = PostInstallActivity.newStub();
+
+    @Override
+    public void startProvisioning(IntakeRequest intakeRequest) {
+        System.out.println("📦 [ProvisioningWorkflow] Starting...");
+        activity.provisionInternet(intakeRequest);
+        activity.provisionVoIP(intakeRequest);
+        System.out.println("✅ [ProvisioningWorkflow] Done.");
+    }
+}
+```
+
+---
+
+## 🗂️ Register in Worker Config
+
+```java
+Worker postInstallWorker = factory.newWorker(TaskQueue.Name.POST_INSTALL_TASK_QUEUE);
+postInstallWorker.registerWorkflowImplementationTypes(
+    ProvisioningWorkflowImpl.class,
+    BillingWorkflowImpl.class,
+    SupportSetupWorkflowImpl.class
+);
+postInstallWorker.registerActivitiesImplementations(new PostInstallActivityImpl());
+```
+
+---
+
+## 🗄️ Dummy DB for dbId-based Lookup
+
+```java
+@Service
+public class DummyDb {
+    private final Map<String, List<DummyDbEntity>> userTables = new HashMap<>();
+
+    public int insert(String tableName, DummyDbEntity tableData) {
+        userTables.computeIfAbsent(tableName, k -> new ArrayList<>()).add(tableData);
+        return 1;
+    }
+
+    public DummyDbEntity findById(String tableName, String id) {
+        return userTables.getOrDefault(tableName, List.of())
+                         .stream().filter(e -> e.id().equals(id)).findFirst().orElse(null);
+    }
+}
+```
+
+---
+
+## ✅ Controller APIs using dbId
+
+```java
+@PostMapping("/start")
+public IntakeResponse start(@RequestBody IntakeRequest intakeRequest) {
+    IntakeWorkflow workflow = workflowClient.newWorkflowStub(
+        IntakeWorkflow.class,
+        WorkflowOptions.newBuilder().setTaskQueue(TaskQueue.Name.INTAKE_TASK_QUEUE).build()
+    );
+    WorkflowExecution execution = WorkflowClient.start(workflow::start, intakeRequest);
+    WorkflowDbEntity dbEntity = workflowDbService.save(intakeRequest, execution);
+    return IntakeResponse.builder().dbId(dbEntity.getDbId()).build();
+}
+
+@PostMapping("/approve")
+public String approve(@RequestBody WorkflowRequest req) {
+    WorkflowDbEntity dbEntity = workflowDbService.findWorkflowId(req.getDbId());
+    workflowClient.newWorkflowStub(IntakeWorkflow.class, dbEntity.getWorkflowId())
+                  .approveInstallation(dbEntity.getIntakeRequest());
+    return "✅ Approved: " + dbEntity.getWorkflowId();
+}
+
+@PostMapping("/status")
+public String status(@RequestBody WorkflowRequest req) {
+    WorkflowDbEntity dbEntity = workflowDbService.findWorkflowId(req.getDbId());
+    return workflowClient.newWorkflowStub(IntakeWorkflow.class, dbEntity.getWorkflowId())
+                         .findCurrentStatus();
+}
+```
+
+---
+
+## 🧠 Summary of Concepts in Day 6
+
+| Concept                  | Description                                                                 |
+|--------------------------|-----------------------------------------------------------------------------|
+| Child Workflow Fan-out   | Launched Provisioning, Billing, Support flows in parallel                   |
+| Activity Sharing         | All post-install workflows used a single `PostInstallActivity` stub         |
+| Dummy Database           | Stored `workflowId` against a generated `dbId`                              |
+| Query Support            | `/status` endpoint reads workflow status using `@QueryMethod`               |
+| Approval Flow            | `/approve` endpoint triggers approval signal                                |
